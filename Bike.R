@@ -19,9 +19,6 @@ DataExplorer::plot_bar(dataTrain)
 DataExplorer::plot_histogram(dataTrain) 
 DataExplorer::plot_missing(dataTrain) 
 
-dplyr::glimpse(dataTrain) 
-skimr::skim(dataTrain)
-
 #Plot 1: Scatter plot of temperature vs count
 plot1 <- ggplot(data = dataTrain, aes(x=temp, y=count)) +
   geom_point(color = "blue") +
