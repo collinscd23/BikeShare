@@ -7,8 +7,11 @@ library(patchwork)
 library(DataExplorer)
 
 
-dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")
+dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")%>%
+  select(-casual, -registered)
 dataTest <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/test.csv")
+
+
 
 dplyr::glimpse(dataTrain) 
 skimr::skim(dataTrain) 
@@ -51,7 +54,7 @@ ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 
 my_linear_model <- linear_reg() %>% #Type of model
   set_engine("lm") %>% # Engine = What R function to use
   set_mode("regression") %>% # Regression just means quantitative response6
-  fit(formula=Response~X1+X2+..., data=dataTrain)
+  fit(formula=count ~ ., data=dataTrain)
 
 ## Generate Predictions Using Linear Model
 bike_predictions <- predict(my_linear_model,
@@ -60,7 +63,7 @@ bike_predictions ## Look at the output
 
 
 kaggle_submission <- bike_predictions %>%
-bind_cols(., testData) %>% #Bind predictions with test data
+bind_cols(., dataTest) %>% #Bind predictions with test data
   select(datetime, .pred) %>% #Just keep datetime and prediction variables
   rename(count=.pred) %>% #rename pred to count (for submission to Kaggle)
   mutate(count=pmax(0, count)) %>% #pointwise max of (0, prediction)
