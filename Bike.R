@@ -71,3 +71,61 @@ bind_cols(., dataTest) %>% #Bind predictions with test data
 
 ## Write out the file
 vroom_write(x=kaggle_submission, file="./LinearPreds.csv", delim=",")
+
+
+
+library(poissonreg)
+
+my_pois_model <- poisson_reg() %>% #Type of model
+  set_engine("glm") %>% # GLM = generalized linear model
+  set_mode("regression") %>%
+fit(formula=count~., data=dataTrain)
+
+## Generate Predictions Using Linear Model
+bike_predictions <- predict(my_pois_model,
+                            new_data=dataTest) # Use fit to predict
+bike_predictions ## Look at the output
+
+kaggle_submission <- bike_predictions %>%
+  bind_cols(., dataTest) %>% #Bind predictions with test data
+  select(datetime, .pred) %>% #Just keep datetime and prediction variables
+  rename(count=.pred) %>% #rename pred to count (for submission to Kaggle)
+  mutate(count=pmax(0, count)) %>% #pointwise max of (0, prediction)
+  mutate(datetime=as.character(format(datetime))) #needed for right format to Kaggle
+
+vroom_write(x=kaggle_submission, file="./PoissonPreds.csv", delim=",")
+
+
+----------test-----------
+library(lubridate) # For handling date-time objects
+
+dataTest <- dataTest %>%
+  mutate(datetime = as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S")) %>%
+  mutate(hour = hour(datetime), 
+         day_of_week = wday(datetime, label = TRUE), 
+         month = month(datetime),
+         year = year(datetime),
+         season = case_when(
+           month %in% c(3, 4, 5) ~ "Spring",
+           month %in% c(6, 7, 8) ~ "Summer",
+           month %in% c(9, 10, 11) ~ "Fall",
+           month %in% c(12, 1, 2) ~ "Winter"
+         )) %>%
+  mutate(log_temp = log(temp + 1),       # Adding 1 to avoid log(0)
+         log_windspeed = log(windspeed + 1),
+         log_humidity = log(humidity + 1))
+
+bike_predictions <- predict(my_pois_model, new_data = dataTest)
+
+kaggle_submission <- bike_predictions %>%
+  bind_cols(., dataTest) %>%
+  select(datetime, .pred) %>%
+  rename(count = .pred) %>%
+  mutate(count = pmax(0, count)) %>%
+  mutate(datetime = as.character(format(datetime)))
+
+vroom_write(x = kaggle_submission, file = "./PoissonPreds_with_log_features.csv", delim = ",")
+
+
+
+
