@@ -12,7 +12,7 @@ dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")%>
 dataTest <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/test.csv")
 
 
-
+#-----EDA-------------
 dplyr::glimpse(dataTrain) 
 skimr::skim(dataTrain) 
 
@@ -48,8 +48,7 @@ combined_plot <- (plot1 | plot2) / (plot3 | plot4)
 print(combined_plot)
 
 ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 8)
-
-
+#--------Linear Model--------------
 ## Setup and Fit the Linear Regression Model
 my_linear_model <- linear_reg() %>% #Type of model
   set_engine("lm") %>% # Engine = What R function to use
@@ -73,7 +72,7 @@ bind_cols(., dataTest) %>% #Bind predictions with test data
 vroom_write(x=kaggle_submission, file="./LinearPreds.csv", delim=",")
 
 
-
+#---------Poisson model-------------
 library(poissonreg)
 
 my_pois_model <- poisson_reg() %>% #Type of model
@@ -86,18 +85,35 @@ bike_predictions <- predict(my_pois_model,
                             new_data=dataTest) # Use fit to predict
 bike_predictions ## Look at the output
 
-kaggle_submission <- bike_predictions %>%
-  bind_cols(., dataTest) %>% #Bind predictions with test data
-  select(datetime, .pred) %>% #Just keep datetime and prediction variables
-  rename(count=.pred) %>% #rename pred to count (for submission to Kaggle)
-  mutate(count=pmax(0, count)) %>% #pointwise max of (0, prediction)
-  mutate(datetime=as.character(format(datetime))) #needed for right format to Kaggle
 
-vroom_write(x=kaggle_submission, file="./PoissonPreds.csv", delim=",")
-
-
-----------test-----------
 library(lubridate) # For handling date-time objects
+
+# Extracting new time-based features from the datetime column
+dataTrain <- dataTrain %>%
+  mutate(datetime = as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S")) %>%
+  mutate(hour = hour(datetime), 
+         day_of_week = wday(datetime, label = TRUE), 
+         month = month(datetime),
+         year = year(datetime),
+         season = case_when(
+           month %in% c(3, 4, 5) ~ "Spring",
+           month %in% c(6, 7, 8) ~ "Summer",
+           month %in% c(9, 10, 11) ~ "Fall",
+           month %in% c(12, 1, 2) ~ "Winter"
+         ))
+
+# Applying log transformation to relevant numeric variables
+dataTrain <- dataTrain %>%
+  mutate(log_temp = log(temp + 1),       # Adding 1 to avoid log(0)
+         log_windspeed = log(windspeed + 1),
+         log_humidity = log(humidity + 1))
+
+# Now, you can fit the model with these transformed variables
+my_pois_model <- poisson_reg() %>% 
+  set_engine("glm") %>% 
+  set_mode("regression") %>%
+  fit(formula = count ~ log_temp + log_windspeed + log_humidity + hour + day_of_week + season, data = dataTrain)
+
 
 dataTest <- dataTest %>%
   mutate(datetime = as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S")) %>%
@@ -115,17 +131,16 @@ dataTest <- dataTest %>%
          log_windspeed = log(windspeed + 1),
          log_humidity = log(humidity + 1))
 
+# Proceed with predictions after the same transformations
 bike_predictions <- predict(my_pois_model, new_data = dataTest)
 
 kaggle_submission <- bike_predictions %>%
-  bind_cols(., dataTest) %>%
-  select(datetime, .pred) %>%
-  rename(count = .pred) %>%
-  mutate(count = pmax(0, count)) %>%
-  mutate(datetime = as.character(format(datetime)))
+  bind_cols(., dataTest) %>% #Bind predictions with test data
+  select(datetime, .pred) %>% #Just keep datetime and prediction variables
+  rename(count=.pred) %>% #rename pred to count (for submission to Kaggle)
+  mutate(count=pmax(0, count)) %>% #pointwise max of (0, prediction)
+  mutate(datetime=as.character(format(datetime))) #needed for right format to Kaggle
 
-vroom_write(x = kaggle_submission, file = "./PoissonPreds_with_log_features.csv", delim = ",")
-
-
+vroom_write(x=kaggle_submission, file="./PoissonPreds.csv", delim=",")
 
 
