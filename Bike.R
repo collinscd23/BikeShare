@@ -5,7 +5,7 @@ library(ggplot2)
 library(skimr)
 library(patchwork)
 library(DataExplorer)
-
+library(recipes)
 
 dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")%>%
   select(-casual, -registered)
@@ -48,6 +48,57 @@ combined_plot <- (plot1 | plot2) / (plot3 | plot4)
 print(combined_plot)
 
 ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 8)
+
+
+
+my_recipe_train <- recipe(count ~ ., data = dataTrain) %>%
+  step_log(count, base = 10) %>% # Log transform only in training
+  step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
+  step_mutate(weather = as.factor(weather)) %>%
+  step_mutate(hour = lubridate::hour(datetime)) %>%
+  step_mutate(season = as.factor(season)) %>%
+  step_mutate(day_of_week = lubridate::wday(datetime, label = TRUE)) %>%
+  step_mutate(month = lubridate::month(datetime, label = TRUE))
+
+
+my_recipe_test <- recipe(~ ., data = dataTest) %>%
+  step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
+  step_mutate(weather = as.factor(weather)) %>%
+  step_mutate(hour = lubridate::hour(datetime)) %>%
+  step_mutate(season = as.factor(season)) %>%
+  step_mutate(day_of_week = lubridate::wday(datetime, label = TRUE)) %>%
+  step_mutate(month = lubridate::month(datetime, label = TRUE))
+
+
+prepared_recipe_train <- my_recipe_train %>% prep(training = dataTrain)
+baked_train <- bake(prepared_recipe_train, new_data = dataTrain)
+
+prepared_recipe_test <- my_recipe_test %>% prep(training = dataTest)
+baked_test <- bake(prepared_recipe_test, new_data = dataTest)
+
+
+my_linear_model <- linear_reg() %>%
+  set_engine("lm") %>%
+  set_mode("regression") %>%
+  fit(formula = count ~ ., data = baked_train)
+
+# Predicting on the test data
+bike_predictions <- predict(my_linear_model, new_data = baked_test)
+
+# Preparing the Kaggle submission file
+kaggle_submission <- bike_predictions %>%
+  bind_cols(., dataTest) %>%
+  select(datetime, .pred) %>%
+  rename(count = .pred) %>%
+  mutate(count = 10 ^ count) %>%  # Inverse log transformation
+  mutate(count = pmax(0, count)) %>%
+  mutate(datetime = as.character(format(datetime)))
+
+# Writing out the file
+vroom_write(x = kaggle_submission, file = "./LinearPredsBaked.csv", delim = ",")
+
+
+
 #--------Linear Model--------------
 ## Setup and Fit the Linear Regression Model
 my_linear_model <- linear_reg() %>% #Type of model
