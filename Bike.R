@@ -85,55 +85,6 @@ bike_predictions <- predict(my_pois_model,
                             new_data=dataTest) # Use fit to predict
 bike_predictions ## Look at the output
 
-
-library(lubridate) # For handling date-time objects
-
-# Extracting new time-based features from the datetime column
-dataTrain <- dataTrain %>%
-  mutate(datetime = as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S")) %>%
-  mutate(hour = hour(datetime), 
-         day_of_week = wday(datetime, label = TRUE), 
-         month = month(datetime),
-         year = year(datetime),
-         season = case_when(
-           month %in% c(3, 4, 5) ~ "Spring",
-           month %in% c(6, 7, 8) ~ "Summer",
-           month %in% c(9, 10, 11) ~ "Fall",
-           month %in% c(12, 1, 2) ~ "Winter"
-         ))
-
-# Applying log transformation to relevant numeric variables
-dataTrain <- dataTrain %>%
-  mutate(log_temp = log(temp + 1),       # Adding 1 to avoid log(0)
-         log_windspeed = log(windspeed + 1),
-         log_humidity = log(humidity + 1))
-
-# Now, you can fit the model with these transformed variables
-my_pois_model <- poisson_reg() %>% 
-  set_engine("glm") %>% 
-  set_mode("regression") %>%
-  fit(formula = count ~ log_temp + log_windspeed + log_humidity + hour + day_of_week + season, data = dataTrain)
-
-
-dataTest <- dataTest %>%
-  mutate(datetime = as.POSIXct(datetime, format="%Y-%m-%d %H:%M:%S")) %>%
-  mutate(hour = hour(datetime), 
-         day_of_week = wday(datetime, label = TRUE), 
-         month = month(datetime),
-         year = year(datetime),
-         season = case_when(
-           month %in% c(3, 4, 5) ~ "Spring",
-           month %in% c(6, 7, 8) ~ "Summer",
-           month %in% c(9, 10, 11) ~ "Fall",
-           month %in% c(12, 1, 2) ~ "Winter"
-         )) %>%
-  mutate(log_temp = log(temp + 1),       # Adding 1 to avoid log(0)
-         log_windspeed = log(windspeed + 1),
-         log_humidity = log(humidity + 1))
-
-# Proceed with predictions after the same transformations
-bike_predictions <- predict(my_pois_model, new_data = dataTest)
-
 kaggle_submission <- bike_predictions %>%
   bind_cols(., dataTest) %>% #Bind predictions with test data
   select(datetime, .pred) %>% #Just keep datetime and prediction variables
