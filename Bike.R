@@ -8,8 +8,8 @@ library(DataExplorer)
 library(recipes)
 library(dplyr)
 
-dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")
-dataTest <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/test.csv")
+dataTrain <- vroom("train.csv")
+dataTest <- vroom("test.csv")
 
 dataTrain <- dataTrain %>%
   select(-casual, -registered) %>%
@@ -52,8 +52,7 @@ combined_plot <- (plot1 | plot2) / (plot3 | plot4)
 print(combined_plot)
 
 ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 8)
-#---------------------------------------------------#
-
+#----------------------Linear Model-----------------------------#
 
 my_recipe <- recipe(count ~ ., data = dataTrain) %>%
   step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
@@ -86,32 +85,6 @@ kaggle_submission <- bike_predictions %>%
   mutate(datetime=as.character(format(datetime)))
 
 vroom_write(x=kaggle_submission, file="./LinearPredsUPdated.csv", delim=",")
-
-
-
-#--------Linear Model--------------
-## Setup and Fit the Linear Regression Model
-my_linear_model <- linear_reg() %>% #Type of model
-  set_engine("lm") %>% # Engine = What R function to use
-  set_mode("regression") %>% # Regression just means quantitative response6
-  fit(formula=count ~ ., data=dataTrain)
-
-## Generate Predictions Using Linear Model
-bike_predictions <- predict(my_linear_model,
-                            new_data=dataTest) # Use fit to predict11
-bike_predictions ## Look at the output
-
-
-kaggle_submission <- bike_predictions %>%
-bind_cols(., dataTest) %>% #Bind predictions with test data
-  select(datetime, .pred) %>% #Just keep datetime and prediction variables
-  rename(count=.pred) %>% #rename pred to count (for submission to Kaggle)
-  mutate(count=pmax(0, count)) %>% #pointwise max of (0, prediction)
-  mutate(datetime=as.character(format(datetime))) #needed for right format to Kaggle
-
-## Write out the file
-vroom_write(x=kaggle_submission, file="./LinearPreds.csv", delim=",")
-
 
 #---------Poisson model-------------
 library(poissonreg)
