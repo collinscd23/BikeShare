@@ -6,10 +6,14 @@ library(skimr)
 library(patchwork)
 library(DataExplorer)
 library(recipes)
+library(dplyr)
 
-dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")%>%
-  select(-casual, -registered)
+dataTrain <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/train.csv")
 dataTest <- vroom("/Users/carsoncollins/Desktop/Stat348/BikeShare/test.csv")
+
+dataTrain <- dataTrain %>%
+  select(-casual, -registered) %>%
+  mutate(count = log(count))
 
 
 #-----EDA-------------
@@ -48,54 +52,40 @@ combined_plot <- (plot1 | plot2) / (plot3 | plot4)
 print(combined_plot)
 
 ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 8)
+#---------------------------------------------------#
 
 
-
-my_recipe_train <- recipe(count ~ ., data = dataTrain) %>%
-  step_log(count, base = 10) %>% # Log transform only in training
+my_recipe <- recipe(count ~ ., data = dataTrain) %>%
   step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
-  step_mutate(weather = as.factor(weather)) %>%
-  step_mutate(hour = lubridate::hour(datetime)) %>%
-  step_mutate(season = as.factor(season)) %>%
-  step_mutate(day_of_week = lubridate::wday(datetime, label = TRUE)) %>%
-  step_mutate(month = lubridate::month(datetime, label = TRUE))
+  step_mutate(weather = factor(weather)) %>%
+  step_time(datetime, features=c("hour")) %>%
+  step_date(datetime, features=c("month")) %>%
+  step_cut(datetime_hour, breaks=c(7, 15, 24)) %>%
+  step_rm(datetime, atemp, season)
 
+my_linear_model <- linear_reg() |>
+  set_engine("lm") |>
+  set_mode("regression") 
 
-my_recipe_test <- recipe(~ ., data = dataTest) %>%
-  step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
-  step_mutate(weather = as.factor(weather)) %>%
-  step_mutate(hour = lubridate::hour(datetime)) %>%
-  step_mutate(season = as.factor(season)) %>%
-  step_mutate(day_of_week = lubridate::wday(datetime, label = TRUE)) %>%
-  step_mutate(month = lubridate::month(datetime, label = TRUE))
+bike_workflow <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(my_linear_model) %>%
+  fit(data = dataTrain)
 
+bike_predictions <- predict(bike_workflow, new_data = dataTest)
 
-prepared_recipe_train <- my_recipe_train %>% prep(training = dataTrain)
-baked_train <- bake(prepared_recipe_train, new_data = dataTrain)
+bike_predictions <- exp(bike_predictions)
 
-prepared_recipe_test <- my_recipe_test %>% prep(training = dataTest)
-baked_test <- bake(prepared_recipe_test, new_data = dataTest)
+bike_predictions
 
-
-my_linear_model <- linear_reg() %>%
-  set_engine("lm") %>%
-  set_mode("regression") %>%
-  fit(formula = count ~ ., data = baked_train)
-
-# Predicting on the test data
-bike_predictions <- predict(my_linear_model, new_data = baked_test)
-
-# Preparing the Kaggle submission file
 kaggle_submission <- bike_predictions %>%
-  bind_cols(., dataTest) %>%
-  select(datetime, .pred) %>%
-  rename(count = .pred) %>%
-  mutate(count = 10 ^ count) %>%  # Inverse log transformation
-  mutate(count = pmax(0, count)) %>%
-  mutate(datetime = as.character(format(datetime)))
+  bind_cols(., dataTest) |>
+  select(datetime, .pred) |>
+  rename(count=.pred) |>
+  mutate(count=pmax(0, count)) |>
+  mutate(datetime=as.character(format(datetime)))
 
-# Writing out the file
-vroom_write(x = kaggle_submission, file = "./LinearPredsBaked.csv", delim = ",")
+vroom_write(x=kaggle_submission, file="./LinearPredsUPdated.csv", delim=",")
 
 
 
