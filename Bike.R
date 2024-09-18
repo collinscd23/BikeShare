@@ -54,12 +54,6 @@ print(combined_plot)
 
 ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 8)
 
-
-
-
-
-
-
 #----------------------Linear Model-----------------------------#
 
 my_recipe <- recipe(count ~ ., data = dataTrain) %>%
@@ -98,18 +92,14 @@ vroom_write(x=kaggle_submission, file="./LinearPredsUPdated.csv", delim=",")
 #-----------------Penalized Regression------------------------------#
 
 ## Penalized regression model
-preg_model <- linear_reg(penalty=0, mixture=1) %>% #Set model and tuning
+preg_model <- linear_reg(penalty=0.01, mixture=.99) %>% #Set model and tuning
   set_engine("glmnet") # Function to fit in R
 preg_wf <- workflow() %>%
   add_recipe(my_recipe) %>%
   add_model(preg_model) %>%
   fit(data=dataTrain)
 preg_preditions <- predict(preg_wf, new_data=dataTest)
-
-
-
-
-
+preg_preditions <- exp(preg_preditions)
 
 
 kaggle_submission <- preg_preditions %>%
@@ -119,7 +109,7 @@ kaggle_submission <- preg_preditions %>%
   mutate(count=pmax(0, count)) |>
   mutate(datetime=as.character(format(datetime)))
 
-vroom_write(x=kaggle_submission, file="./Penalty0.01Mix1.csv", delim=",")
+vroom_write(x=kaggle_submission, file="./Penalty0.01Mix0.99.csv", delim=",")
 #---------Poisson model-------------#
 library(poissonreg)
 
