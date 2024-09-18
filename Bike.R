@@ -7,6 +7,7 @@ library(patchwork)
 library(DataExplorer)
 library(recipes)
 library(dplyr)
+library(poissonreg)
 
 dataTrain <- vroom("train.csv")
 dataTest <- vroom("test.csv")
@@ -52,6 +53,13 @@ combined_plot <- (plot1 | plot2) / (plot3 | plot4)
 print(combined_plot)
 
 ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 8)
+
+
+
+
+
+
+
 #----------------------Linear Model-----------------------------#
 
 my_recipe <- recipe(count ~ ., data = dataTrain) %>%
@@ -60,7 +68,9 @@ my_recipe <- recipe(count ~ ., data = dataTrain) %>%
   step_time(datetime, features=c("hour")) %>%
   step_date(datetime, features=c("month")) %>%
   step_cut(datetime_hour, breaks=c(7, 15, 24)) %>%
-  step_rm(datetime, atemp, season)
+  step_rm(datetime, atemp, season) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric_predictors())
 
 my_linear_model <- linear_reg() |>
   set_engine("lm") |>
@@ -85,8 +95,32 @@ kaggle_submission <- bike_predictions %>%
   mutate(datetime=as.character(format(datetime)))
 
 vroom_write(x=kaggle_submission, file="./LinearPredsUPdated.csv", delim=",")
+#-----------------Penalized Regression------------------------------#
 
-#---------Poisson model-------------
+## Penalized regression model
+preg_model <- linear_reg(penalty=0, mixture=1) %>% #Set model and tuning
+  set_engine("glmnet") # Function to fit in R
+preg_wf <- workflow() %>%
+  add_recipe(my_recipe) %>%
+  add_model(preg_model) %>%
+  fit(data=dataTrain)
+preg_preditions <- predict(preg_wf, new_data=dataTest)
+
+
+
+
+
+
+
+kaggle_submission <- preg_preditions %>%
+  bind_cols(., dataTest) |>
+  select(datetime, .pred) |>
+  rename(count=.pred) |>
+  mutate(count=pmax(0, count)) |>
+  mutate(datetime=as.character(format(datetime)))
+
+vroom_write(x=kaggle_submission, file="./Penalty0.01Mix1.csv", delim=",")
+#---------Poisson model-------------#
 library(poissonreg)
 
 my_pois_model <- poisson_reg() %>% #Type of model
