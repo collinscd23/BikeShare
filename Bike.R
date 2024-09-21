@@ -8,9 +8,10 @@ library(DataExplorer)
 library(recipes)
 library(dplyr)
 library(poissonreg)
+library(glmnet)
 
-dataTrain <- vroom("train.csv")
-dataTest <- vroom("test.csv")
+dataTrain <- vroom("/Users/carsoncollins/Desktop/Stats348/BikeShare/train.csv")
+dataTest <- vroom("/Users/carsoncollins/Desktop/Stats348/BikeShare/test.csv")
 
 dataTrain <- dataTrain %>%
   select(-casual, -registered) %>%
@@ -56,13 +57,14 @@ ggsave("4_panel_bikeshare_plot.png", plot = combined_plot, width = 12, height = 
 
 #----------------------Linear Model-----------------------------#
 
-my_recipe <- recipe(count ~ ., data = dataTrain) %>%
+my_recipe1 <- recipe(count ~ ., data = dataTrain) %>%
   step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
   step_mutate(weather = factor(weather)) %>%
   step_time(datetime, features=c("hour")) %>%
-  step_date(datetime, features=c("month")) %>%
   step_cut(datetime_hour, breaks=c(7, 15, 24)) %>%
-  step_rm(datetime, atemp, season) %>%
+  step_mutate(season = factor(season, labels=c("spring","summer","fall","winter")))%>%
+  step_mutate(datetime_hour=factor(datetime_hour)) %>%
+  step_rm(datetime, atemp) %>%
   step_dummy(all_nominal_predictors()) %>%
   step_normalize(all_numeric_predictors())
 
@@ -77,18 +79,16 @@ bike_workflow <- workflow() %>%
 
 bike_predictions <- predict(bike_workflow, new_data = dataTest)
 
-bike_predictions <- exp(bike_predictions)
-
 bike_predictions
 
 kaggle_submission <- bike_predictions %>%
   bind_cols(., dataTest) |>
   select(datetime, .pred) |>
   rename(count=.pred) |>
-  mutate(count=pmax(0, count)) |>
+  mutate(count=exp(count)) |>
   mutate(datetime=as.character(format(datetime)))
 
-vroom_write(x=kaggle_submission, file="./LinearPredsUPdated.csv", delim=",")
+vroom_write(x=kaggle_submission, file="/Users/carsoncollins/Desktop/Stats348/BikeShare/LinearPredsTESTNOW.csv", delim=",")
 #-----------------Penalized Regression------------------------------#
 
 ## Penalized regression model
@@ -106,10 +106,78 @@ kaggle_submission <- preg_preditions %>%
   bind_cols(., dataTest) |>
   select(datetime, .pred) |>
   rename(count=.pred) |>
-  mutate(count=pmax(0, count)) |>
+  mutate(count=exp(count)) |>
   mutate(datetime=as.character(format(datetime)))
 
 vroom_write(x=kaggle_submission, file="./Penalty0.01Mix0.99.csv", delim=",")
+#-------------------Tuning model--------------#
+
+my_recipe2 <- recipe(count~., data = dataTrain) %>% 
+  step_mutate(season=factor(season, labels=c("Spring","Summer","Fall","Winter")),
+              holiday=factor(holiday),
+              workingday=factor(workingday),
+              weather= factor(ifelse(weather==4,3,weather), labels=c("Sunny","Cloudy","Rainy"))) %>% 
+  step_date(datetime, features = "dow") %>% 
+  step_time(datetime, features="hour") %>% 
+  step_rm(datetime) %>% 
+  step_mutate(datetime_hour=factor(datetime_hour)) %>%
+  step_dummy(all_nominal_predictors()) %>% 
+  step_normalize(all_numeric_predictors())
+
+
+
+L <- 5
+K <- 5
+
+## Penalized regression model
+preg_model <- linear_reg(penalty=tune(),
+                         mixture=tune()) %>% #Set model and tuning
+  set_engine("glmnet") # Function to fit in R
+## Set Workflow
+preg_wf <- workflow() %>%
+add_recipe(my_recipe2) %>%
+add_model(preg_model)
+
+## Grid of values to tune over
+grid_of_tuning_params <- grid_regular(penalty(),
+                                      mixture(),
+                                      levels = L) ## L^2 total tuning possibilities
+
+## Split data for CV
+folds <- vfold_cv(dataTrain, v = K, repeats=1)
+## Run the CV
+CV_results <- preg_wf %>%
+tune_grid(resamples=folds,
+          grid=grid_of_tuning_params,
+          metrics=metric_set(rmse, mae, rsq)) #Or leave metrics NULL
+
+## Plot Results (example)
+#collect_metrics(CV_results) %>% # Gathers metrics into DF
+  #filter(.metric=="rmse") %>%
+#ggplot(data=., aes(x=penalty, y=mean, color=factor(mixture))) +
+#geom_line()
+
+## Find Best Tuning Parameters
+bestTune <- CV_results %>%
+select_best(metric = "rmse")
+## Finalize the Workflow & fit it
+final_wf <-
+preg_wf %>%
+finalize_workflow(bestTune) %>%
+fit(data=dataTrain)
+
+## Predict
+preg_tune <- predict(final_wf, new_data = dataTest)
+
+kaggle_submission <- preg_tune %>%
+  bind_cols(., dataTest) |>
+  select(datetime, .pred) |>
+  rename(count=.pred) |>
+  mutate(count=exp(count)) |>
+  mutate(datetime=as.character(format(datetime)))
+
+vroom_write(x=kaggle_submission, file="/Users/carsoncollins/Desktop/Stats348/BikeShare/TuningModel.csv", delim=",")
+
 #---------Poisson model-------------#
 library(poissonreg)
 
