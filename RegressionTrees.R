@@ -25,15 +25,16 @@ my_mod <- decision_tree(tree_depth = tune(),
   set_mode("regression")
 
 # Create recipe (optional based on your feature engineering needs)
-my_recipe <- recipe(count ~ ., data = dataTrain) %>%
-  step_mutate(weather = ifelse(weather == 4, 3, weather)) %>%
-  step_mutate(weather = factor(weather)) %>%
-  step_time(datetime, features=c("hour")) %>%
-  step_cut(datetime_hour, breaks=c(7, 15, 24)) %>%
-  step_mutate(season = factor(season, labels=c("spring","summer","fall","winter")))%>%
+my_recipe <- recipe(count~., data = dataTrain) %>% 
+  step_mutate(season=factor(season, labels=c("Spring","Summer","Fall","Winter")),
+              holiday=factor(holiday),
+              workingday=factor(workingday),
+              weather= factor(ifelse(weather==4,3,weather), labels=c("Sunny","Cloudy","Rainy"))) %>% 
+  step_date(datetime, features = "dow") %>% 
+  step_time(datetime, features="hour") %>% 
+  step_rm(datetime) %>% 
   step_mutate(datetime_hour=factor(datetime_hour)) %>%
-  step_rm(datetime, atemp) %>%
-  step_dummy(all_nominal_predictors()) %>%
+  step_dummy(all_nominal_predictors()) %>% 
   step_normalize(all_numeric_predictors())
 
 # Create a workflow with the model and the recipe
@@ -42,14 +43,13 @@ my_workflow <- workflow() %>%
   add_recipe(my_recipe)
 
 # Set up grid of tuning values for hyperparameters
-my_grid <- grid_regular(tree_depth(range = c(1, 10)),
-                        cost_complexity(range = c(-2, -0.5)),
-                        min_n(range = c(2, 10)),
-                        levels = 5)
+my_grid <- grid_regular(tree_depth(),
+                        cost_complexity(),
+                        min_n(),
+                        levels = 7)
 
 # Set up K-fold cross-validation
-set.seed(123)
-cv_folds <- vfold_cv(dataTrain, v = 5)
+cv_folds <- vfold_cv(dataTrain, v = 10, repeats =1)
 
 # Tune the model parameters using the grid
 tune_results <- tune_grid(
@@ -60,7 +60,7 @@ tune_results <- tune_grid(
 )
 
 # Find the best tuning parameters based on RMSE
-best_params <- select_best(tune_results, "rmse")
+best_params <- select_best(tune_results, metric = "rmse")
 
 # Finalize the workflow with the best parameters
 final_workflow <- finalize_workflow(my_workflow, best_params)
@@ -71,19 +71,14 @@ final_fit <- fit(final_workflow, data = dataTrain)
 # Make predictions on the test data
 predictions <- predict(final_fit, new_data = dataTest)
 
-# You can un-log transform the predictions if needed
-predictions <- exp(predictions$.pred)
-
 # View predictions
 predictions
 
+kaggle_submission <- predictions %>%
+  bind_cols(., dataTest) |>
+  select(datetime, .pred) |>
+  rename(count=.pred) |>
+  mutate(count=exp(count)) |>
+  mutate(datetime=as.character(format(datetime)))
 
-
-
-
-
-
-
-
-
-
+vroom_write(x=kaggle_submission, file="/Users/carsoncollins/Desktop/Stats348/BikeShare/RegressionTrees.csv", delim=",")
