@@ -19,13 +19,12 @@ dataTrain <- dataTrain %>%
   select(-casual, -registered) %>%
   mutate(count = log(count))
 
-my_mod <- decision_tree(tree_depth = tune(),
-                        cost_complexity = tune(),
-                        min_n=tune()) %>% #Type of model
-  set_engine("rpart") %>% # What R function to use
+my_mod <- rand_forest(mtry = tune(),
+                      min_n=tune(),
+                      trees=500) %>% #Type of model
+  set_engine("ranger") %>% # What R function to use
   set_mode("regression")
 
-# Create recipe (optional based on your feature engineering needs)
 my_recipe <- recipe(count~., data = dataTrain) %>% 
   step_mutate(season=factor(season, labels=c("Spring","Summer","Fall","Winter")),
               holiday=factor(holiday),
@@ -43,13 +42,11 @@ my_workflow <- workflow() %>%
   add_model(my_mod) %>%
   add_recipe(my_recipe)
 
-# Set up grid of tuning values for hyperparameters
-my_grid <- grid_regular(tree_depth(),
-                        cost_complexity(),
-                        min_n(),
-                        levels = 5)
-
-
+my_grid <- grid_regular(
+  mtry(range = c(1, 40)), # Specify the range for mtry
+  min_n(),                # Specify the range for min_n (default range used)
+  levels = 5              # Number of levels for each parameter
+)
 
 # Set up K-fold cross-validation
 cv_folds <- vfold_cv(dataTrain, v = 5, repeats =1)
@@ -84,4 +81,5 @@ kaggle_submission <- predictions %>%
   mutate(count=exp(count)) |>
   mutate(datetime=as.character(format(datetime)))
 
-vroom_write(x=kaggle_submission, file="/Users/carsoncollins/Desktop/Stats348/BikeShare/RegressionTrees.csv", delim=",")
+vroom_write(x=kaggle_submission, file="/Users/carsoncollins/Desktop/Stats348/BikeShare/RandomForest.csv", delim=",")
+
