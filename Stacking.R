@@ -39,7 +39,7 @@ my_recipe <- recipe(count~., data = dataTrain) %>%
 # Set up models
 rf_mod <- rand_forest(mtry = tune(),
                       min_n = tune(),
-                      trees = 500) %>%
+                      trees = 600) %>%
   set_engine("ranger") %>%
   set_mode("regression")
 
@@ -47,9 +47,10 @@ lm_mod <- linear_reg() %>%
   set_engine("lm") %>%
   set_mode("regression")
 
-tree_mod <- decision_tree(cost_complexity = tune(),
-                          tree_depth = tune()) %>%
-  set_engine("rpart") %>%
+tree_mod <- decision_tree(tree_depth = tune(),
+              cost_complexity = tune(),
+              min_n=tune()) %>% #Type of model
+  set_engine("rpart") %>% # What R function to use
   set_mode("regression")
 
 # Create workflows for each base model
@@ -66,19 +67,19 @@ tree_workflow <- workflow() %>%
   add_recipe(my_recipe)
 
 # Cross-validation setup
-cv_folds <- vfold_cv(dataTrain, v = 5, repeats = 1)
+cv_folds <- vfold_cv(dataTrain, v = 6, repeats = 1)
 
 # Tuning grid
 rf_grid <- grid_regular(
   mtry(range = c(1, 40)),
   min_n(),
-  levels = 5
+  levels = 6
 )
 
 tree_grid <- grid_regular(
   cost_complexity(),
   tree_depth(),
-  levels = 5
+  levels =6
 )
 
 # Tune each model
